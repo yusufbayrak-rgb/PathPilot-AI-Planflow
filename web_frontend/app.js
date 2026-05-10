@@ -2,6 +2,7 @@ const API_BASE_URL = 'http://127.0.0.1:8000';
 
 let token = localStorage.getItem('planflow_token');
 let totalCoins = 0;
+let currentProjectCoins = 0;
 let currentTask = null;
 let currentTaskElementBtn = null;
 let activeProjectId = null;
@@ -23,8 +24,6 @@ const roadmapForm = document.getElementById('roadmap-form');
 const generateBtn = document.getElementById('generate-btn');
 const currentTargetTitle = document.getElementById('current-target-title');
 const roadmapContent = document.getElementById('roadmap-content');
-const countdownTimer = document.getElementById('countdown-timer');
-const countdownDisplay = document.getElementById('countdown-display');
 
 let countdownInterval;
 const modal = document.getElementById('progress-modal');
@@ -36,6 +35,43 @@ const authRemember = document.getElementById('auth-remember');
 const rememberMeContainer = document.getElementById('remember-me-container');
 const logoutBtn = document.getElementById('logout-btn');
 const hamburgerMenu = document.getElementById('hamburger-menu');
+
+// New DOM elements
+const topStatusBar = document.getElementById('top-status-bar');
+const topCountdown = document.getElementById('top-countdown');
+const topEffort = document.getElementById('top-effort');
+const topStages = document.getElementById('top-stages');
+
+const groupFirstname = document.getElementById('group-firstname');
+const groupLastname = document.getElementById('group-lastname');
+const authFirstname = document.getElementById('auth-firstname');
+const authLastname = document.getElementById('auth-lastname');
+
+const sidebarCoinCount = document.getElementById('sidebar-coin-count');
+const profileBtn = document.getElementById('profile-btn');
+const profileSection = document.getElementById('profile-section');
+const profileFirstname = document.getElementById('profile-firstname');
+const profileLastname = document.getElementById('profile-lastname');
+const saveProfileBtn = document.getElementById('save-profile-btn');
+const profileProjectsList = document.getElementById('profile-projects-list');
+
+let allUserProjects = [];
+
+function updateCoinDisplay() {
+    if(sidebarCoinCount) sidebarCoinCount.innerText = totalCoins;
+    if(coinCountEl) {
+        if(activeProjectId !== null) {
+            coinCountEl.innerText = currentProjectCoins;
+        } else {
+            coinCountEl.innerText = totalCoins;
+        }
+    }
+}
+
+function updateCoinCount(val) {
+    totalCoins = val;
+    updateCoinDisplay();
+}
 
 let isLoginMode = true;
 
@@ -62,8 +98,16 @@ authSwitchLink.addEventListener('click', (e) => {
     
     if (isLoginMode) {
         rememberMeContainer.classList.remove('hidden');
+        groupFirstname.classList.add('hidden');
+        groupLastname.classList.add('hidden');
+        authFirstname.removeAttribute('required');
+        authLastname.removeAttribute('required');
     } else {
         rememberMeContainer.classList.add('hidden');
+        groupFirstname.classList.remove('hidden');
+        groupLastname.classList.remove('hidden');
+        authFirstname.setAttribute('required', 'true');
+        authLastname.setAttribute('required', 'true');
     }
 });
 
@@ -72,6 +116,12 @@ authForm.addEventListener('submit', async (e) => {
     const email = document.getElementById('auth-email').value;
     const password = document.getElementById('auth-password').value;
     
+    let bodyData = { email, password };
+    if (!isLoginMode) {
+        bodyData.first_name = authFirstname.value;
+        bodyData.last_name = authLastname.value;
+    }
+    
     const endpoint = isLoginMode ? '/login' : '/register';
     setLoading(authSubmitBtn, true);
 
@@ -79,7 +129,7 @@ authForm.addEventListener('submit', async (e) => {
         const res = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password })
+            body: JSON.stringify(bodyData)
         });
         const data = await res.json();
         if(!res.ok) throw new Error(data.detail || 'Auth Error');
@@ -123,21 +173,25 @@ logoutBtn.addEventListener('click', () => {
     localStorage.removeItem('planflow_token');
     authOverlay.classList.remove('hidden');
     hamburgerMenu.classList.add('hidden');
+    topStatusBar.classList.add('hidden');
     // Clear the active project UI
     setupSection.classList.add('hidden');
     roadmapSection.classList.add('hidden');
+    profileSection.classList.add('hidden');
 });
 
 // Data Loaders
-async function loadUserAndProjects() {
+async function loadUserAndProjects(skipShowProfile = false) {
     try {
         const meRes = await authFetch(`${API_BASE_URL}/me`);
         const meData = await meRes.json();
-        totalCoins = meData.total_coins;
-        coinCountEl.innerText = totalCoins;
+        updateCoinCount(meData.total_coins || 0);
+        if (groupFirstname && meData.first_name) groupFirstname.innerText = meData.first_name;
+        if (groupLastname && meData.last_name) groupLastname.innerText = meData.last_name;
 
         const projRes = await authFetch(`${API_BASE_URL}/projects`);
         const projects = await projRes.json();
+        allUserProjects = projects;
         
         projectListEl.innerHTML = '';
         projects.forEach(p => {
@@ -151,11 +205,8 @@ async function loadUserAndProjects() {
             projectListEl.appendChild(li);
         });
 
-        if(projects.length > 0 && !activeProjectId) {
-            loadProject(projects[0].id);
-        } else if (projects.length === 0) {
-            setupSection.classList.remove('hidden');
-            roadmapSection.classList.add('hidden');
+        if (!skipShowProfile) {
+            showProfileSection();
         }
     } catch (e) { console.error(e); }
 }
@@ -163,7 +214,9 @@ async function loadUserAndProjects() {
 async function loadProject(id) {
     activeProjectId = id;
     setupSection.classList.add('hidden');
+    profileSection.classList.add('hidden');
     roadmapSection.classList.remove('hidden');
+    topStatusBar.classList.remove('hidden');
     roadmapContent.innerHTML = '<div class="loader" style="margin: 2rem auto; border-top-color: var(--primary-color)"></div>';
 
     try {
@@ -176,6 +229,8 @@ async function loadProject(id) {
 newProjectBtn.addEventListener('click', () => {
     setupSection.classList.remove('hidden');
     roadmapSection.classList.add('hidden');
+    profileSection.classList.add('hidden');
+    topStatusBar.classList.add('hidden');
 });
 
 // Roadmap Form
@@ -195,12 +250,16 @@ roadmapForm.addEventListener('submit', async (e) => {
             body: JSON.stringify({ target, duration: parseInt(duration), daily_time: parseInt(daily_time), level })
         });
         const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'API Hatası');
         renderRoadmap(data);
         setupSection.classList.add('hidden');
+        profileSection.classList.add('hidden');
         roadmapSection.classList.remove('hidden');
-        loadUserAndProjects(); // reload sidebar
+        topStatusBar.classList.remove('hidden');
+        loadUserAndProjects(true); // reload sidebar
     } catch (error) {
-        alert("Hata oluştu.");
+        console.error(error);
+        alert("Hata oluştu: " + error.message);
     } finally {
         setLoading(generateBtn, false);
     }
@@ -213,19 +272,17 @@ function renderRoadmap(data) {
 
     // Effort Tracking
     if (data.total_minutes !== undefined) {
-        document.getElementById('effort-display').classList.remove('hidden');
         const formatMins = (m) => {
             const h = Math.floor(m / 60);
             const rm = m % 60;
             return `${h}s ${rm}dk`;
         };
-        document.getElementById('effort-text').innerText = `${formatMins(data.completed_minutes)} / ${formatMins(data.total_minutes)}`;
+        topEffort.innerText = `${formatMins(data.completed_minutes)} / ${formatMins(data.total_minutes)}`;
     }
 
     // Timer Logic
     if (countdownInterval) clearInterval(countdownInterval);
     if (data.created_at && data.duration) {
-        countdownTimer.classList.remove('hidden');
         const endDate = new Date(data.created_at).getTime() + (data.duration * 24 * 60 * 60 * 1000);
         
         countdownInterval = setInterval(() => {
@@ -234,7 +291,7 @@ function renderRoadmap(data) {
             
             if (distance < 0) {
                 clearInterval(countdownInterval);
-                countdownDisplay.innerText = "Süre Doldu!";
+                topCountdown.innerText = "Süre Doldu!";
                 return;
             }
             
@@ -243,33 +300,65 @@ function renderRoadmap(data) {
             const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
             const seconds = Math.floor((distance % (1000 * 60)) / 1000);
             
-            countdownDisplay.innerHTML = `
-                <div style="display: flex; flex-direction: column; align-items: center;">
-                    <span style="font-size: 0.65rem; color: var(--text-muted); font-weight: 300;">GÜN</span>
-                    <span style="font-size: 1.1rem; font-weight: bold; color: var(--accent-color);">${days}</span>
-                </div>
-                <div style="display: flex; flex-direction: column; align-items: center;">
-                    <span style="font-size: 0.65rem; color: var(--text-muted); font-weight: 300;">SAAT</span>
-                    <span style="font-size: 1.1rem; font-weight: bold; color: var(--accent-color);">${hours}</span>
-                </div>
-                <div style="display: flex; flex-direction: column; align-items: center;">
-                    <span style="font-size: 0.65rem; color: var(--text-muted); font-weight: 300;">DAKİKA</span>
-                    <span style="font-size: 1.1rem; font-weight: bold; color: var(--accent-color);">${minutes}</span>
-                </div>
-                <div style="display: flex; flex-direction: column; align-items: center;">
-                    <span style="font-size: 0.65rem; color: var(--text-muted); font-weight: 300;">SANİYE</span>
-                    <span style="font-size: 1.1rem; font-weight: bold; color: var(--accent-color);">${seconds}</span>
-                </div>
-            `;
+            topCountdown.innerText = `${days}G ${hours}S ${minutes}D ${seconds}S`;
         }, 1000);
     }
 
-    data.roadmap.forEach(phase => {
+    // Top Stages
+    topStages.innerHTML = '';
+    data.roadmap.forEach((phase, index) => {
+        let totalPhaseTasks = phase.tasks.length;
+        let completedPhaseTasks = phase.tasks.filter(t => t.completed).length;
+        let phaseCompletion = totalPhaseTasks > 0 ? Math.round((completedPhaseTasks / totalPhaseTasks) * 100) : 0;
+        
+        const dot = document.createElement('div');
+        dot.className = 'stage-dot';
+        dot.innerText = index + 1;
+        if(phaseCompletion === 100) {
+            dot.style.background = 'var(--success-color)';
+            dot.style.borderColor = 'var(--success-color)';
+        }
+        
+        dot.innerHTML += `<div class="stage-tooltip">${phase.phase_name} - %${phaseCompletion} Tamamlandı</div>`;
+        topStages.appendChild(dot);
+    });
+
+    currentProjectCoins = 0;
+
+    data.roadmap.forEach((phase, phaseIndex) => {
         const phaseEl = document.createElement('div');
         phaseEl.className = 'phase-card fade-in';
-        phaseEl.innerHTML = `<h3 class="phase-title">${phase.phase_name}</h3>`;
+        
+        let totalPhaseTasks = phase.tasks.length;
+        let completedPhaseTasks = phase.tasks.filter(t => t.completed).length;
+        let phaseCompletion = totalPhaseTasks > 0 ? Math.round((completedPhaseTasks / totalPhaseTasks) * 100) : 0;
+        let isCompleted = phaseCompletion === 100;
+        let titleText = phase.phase_name + (isCompleted ? ' ✅' : '');
+
+        phaseEl.innerHTML = `
+            <div class="phase-header" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--glass-border); padding-bottom: 0.5rem; margin-bottom: 1rem;">
+                <h3 class="phase-title" style="border: none; margin: 0; padding: 0;">${titleText}</h3>
+                <span class="phase-toggle-icon" style="font-size: 0.8rem; color: var(--text-muted);">${phaseIndex === 0 ? '▲' : '▼'}</span>
+            </div>
+            <div class="phase-tasks-container ${phaseIndex === 0 ? '' : 'hidden'}"></div>
+        `;
+        
+        const tasksContainer = phaseEl.querySelector('.phase-tasks-container');
+        const phaseHeader = phaseEl.querySelector('.phase-header');
+        const toggleIcon = phaseEl.querySelector('.phase-toggle-icon');
+        
+        phaseHeader.addEventListener('click', () => {
+            tasksContainer.classList.toggle('hidden');
+            if(tasksContainer.classList.contains('hidden')) {
+                toggleIcon.innerText = '▼';
+            } else {
+                toggleIcon.innerText = '▲';
+            }
+        });
 
         phase.tasks.forEach(task => {
+            if(task.completed) currentProjectCoins += task.coin_reward;
+            
             const taskEl = document.createElement('div');
             taskEl.className = 'task-item';
             
@@ -281,6 +370,7 @@ function renderRoadmap(data) {
             if (task.subtasks && task.subtasks.length > 0) {
                 subtasksHTML = `<div class="subtasks-list">`;
                 task.subtasks.forEach(st => {
+                    if(st.completed) currentProjectCoins += st.coin_reward;
                     subtasksHTML += `
                         <div class="subtask-item">
                             <div class="subtask-info">
@@ -314,10 +404,11 @@ function renderRoadmap(data) {
                 </div>
                 ${subtasksHTML}
             `;
-            phaseEl.appendChild(taskEl);
+            tasksContainer.appendChild(taskEl);
         });
         roadmapContent.appendChild(phaseEl);
     });
+    updateCoinDisplay();
 }
 
 async function completeSubtask(id, btnElement) {
@@ -328,8 +419,8 @@ async function completeSubtask(id, btnElement) {
         if(data.success) {
             btnElement.classList.add('completed');
             btnElement.innerText = 'Bitti';
-            totalCoins += data.earned_coins;
-            coinCountEl.innerText = totalCoins;
+            currentProjectCoins += data.earned_coins;
+            updateCoinCount(totalCoins + data.earned_coins);
         }
     } catch (e) { console.error(e); }
 }
@@ -362,6 +453,7 @@ analyzeBtn.addEventListener('click', async () => {
             body: JSON.stringify({ task_id: currentTask, user_text: text })
         });
         const result = await res.json();
+        if (!res.ok) throw new Error(result.detail || 'Analiz başarısız');
         
         document.getElementById('res-status').innerText = result.status === 'completed' ? 'Tamamlandı! 🎉' : 'Kısmen Tamamlandı 🚀';
         document.getElementById('res-status').style.color = result.status === 'completed' ? '#10b981' : '#f59e0b';
@@ -370,8 +462,8 @@ analyzeBtn.addEventListener('click', async () => {
         document.getElementById('res-feedback').innerText = result.feedback;
         
         if(result.earned_coins > 0) {
-            totalCoins += result.earned_coins;
-            coinCountEl.innerText = totalCoins;
+            currentProjectCoins += result.earned_coins;
+            updateCoinCount(totalCoins + result.earned_coins);
         }
         
         analysisResult.classList.remove('hidden');
@@ -395,3 +487,106 @@ function setLoading(btn, isLoading) {
         loaderEl.classList.add('hidden');
     }
 }
+
+// Profile Actions
+async function deleteProject(id) {
+    try {
+        const res = await authFetch(`${API_BASE_URL}/projects/${id}`, { method: 'DELETE' });
+        if(res.ok) {
+            activeProjectId = null;
+            await loadUserAndProjects();
+        } else {
+            alert('Proje silinemedi.');
+        }
+    } catch(e) { console.error(e); }
+}
+
+async function showProfileSection() {
+    activeProjectId = null;
+    updateCoinDisplay();
+    setupSection.classList.add('hidden');
+    roadmapSection.classList.add('hidden');
+    topStatusBar.classList.add('hidden');
+    profileSection.classList.remove('hidden');
+
+    try {
+        const meRes = await authFetch(`${API_BASE_URL}/me`);
+        if(meRes.ok) {
+            const meData = await meRes.json();
+            profileFirstname.value = meData.first_name || '';
+            profileLastname.value = meData.last_name || '';
+        }
+    } catch(e) {}
+    
+    profileProjectsList.innerHTML = '';
+    if(allUserProjects.length === 0) {
+        profileProjectsList.innerHTML = '<p style="color: var(--text-muted); font-size: 0.9rem;">Henüz hiç proje oluşturmadınız.</p>';
+    } else {
+        allUserProjects.forEach(p => {
+            const card = document.createElement('div');
+            card.className = 'profile-project-card';
+            card.style.cursor = 'pointer';
+            card.onclick = () => loadProject(p.id);
+            card.innerHTML = `
+                <div class="profile-project-header">
+                    <span class="profile-project-title">${p.title}</span>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span class="profile-project-progress-text">%${p.completion_percentage} Tamamlandı</span>
+                        <button class="sm-btn logout-btn delete-btn" style="width: auto; padding: 0.3rem 0.8rem;" data-id="${p.id}">Sil</button>
+                    </div>
+                </div>
+                <div class="profile-project-bar-container">
+                    <div class="profile-project-bar" style="width: ${p.completion_percentage}%;"></div>
+                </div>
+            `;
+            const deleteBtn = card.querySelector('.delete-btn');
+            deleteBtn.onclick = async (e) => {
+                e.stopPropagation();
+                if(confirm('Projeyi silmek istediğinize emin misiniz?')) {
+                    const btn = e.target;
+                    btn.innerText = 'Siliniyor...';
+                    await deleteProject(p.id);
+                }
+            };
+            profileProjectsList.appendChild(card);
+        });
+    }
+}
+
+profileBtn.addEventListener('click', () => {
+    showProfileSection();
+    hamburgerMenu.classList.remove('open'); // close menu if any
+});
+
+saveProfileBtn.addEventListener('click', async () => {
+    const btn = saveProfileBtn;
+    const oldText = btn.innerText;
+    btn.innerText = 'Kaydediliyor...';
+    btn.disabled = true;
+    
+    try {
+        const res = await authFetch(`${API_BASE_URL}/profile`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                first_name: profileFirstname.value,
+                last_name: profileLastname.value
+            })
+        });
+        if(res.ok) {
+            btn.innerText = 'Başarılı!';
+            if (groupFirstname) groupFirstname.innerText = profileFirstname.value;
+            if (groupLastname) groupLastname.innerText = profileLastname.value;
+        } else {
+            btn.innerText = 'Hata!';
+        }
+    } catch(e) {
+        btn.innerText = 'Hata!';
+    }
+    
+    setTimeout(() => {
+        btn.innerText = oldText;
+        btn.disabled = false;
+    }, 1500);
+});
+

@@ -18,6 +18,8 @@ class DBUser(Base):
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
     total_coins = Column(Integer, default=0)
+    first_name = Column(String, default="")
+    last_name = Column(String, default="")
     projects = relationship("DBProject", back_populates="owner")
 
 class DBProject(Base):

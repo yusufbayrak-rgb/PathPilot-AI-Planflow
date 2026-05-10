@@ -17,13 +17,24 @@ from database import SessionLocal, engine, Base, DBUser, DBProject, DBPhase, DBT
 from models import (
     RoadmapRequest, RoadmapResponse, ProgressRequest, ProgressResponse,
     UserCreate, UserLogin, Token, UserResponse, ProjectSummary,
-    PhaseItem, TaskItem, SubTaskItem
+    PhaseItem, TaskItem, SubTaskItem, UserUpdate
 )
+from sqlalchemy import text
 
 load_dotenv()
 
 # Create DB tables
 Base.metadata.create_all(bind=engine)
+
+with engine.begin() as conn:
+    try:
+        conn.execute(text('ALTER TABLE users ADD COLUMN first_name VARCHAR DEFAULT ""'))
+    except Exception:
+        pass
+    try:
+        conn.execute(text('ALTER TABLE users ADD COLUMN last_name VARCHAR DEFAULT ""'))
+    except Exception:
+        pass
 
 app = FastAPI(title="DeepStep AI API")
 
@@ -85,15 +96,33 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
 
 # OpenAI / Gemini Config
 is_gemini_only = bool(os.getenv("GEMINI_API_KEY") and not os.getenv("OPENAI_API_KEY"))
-if is_gemini_only:
+# OpenAI / Gemini / Groq Config
+openai_key = os.getenv("OPENAI_API_KEY")
+gemini_key = os.getenv("GEMINI_API_KEY")
+groq_key = os.getenv("GROQ_API_KEY")
+
+if groq_key:
     client = AsyncOpenAI(
-        api_key=os.getenv("GEMINI_API_KEY"),
+        api_key=groq_key,
+        base_url="https://api.groq.com/openai/v1"
+    )
+    model_name = "llama-3.3-70b-versatile"
+    use_json_format = True
+elif openai_key:
+    client = AsyncOpenAI(api_key=openai_key)
+    model_name = "gpt-4o-mini"
+    use_json_format = True
+elif gemini_key:
+    client = AsyncOpenAI(
+        api_key=gemini_key,
         base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
     )
-    model_name = "gemini-2.5-flash"
+    model_name = "gemini-1.5-flash"
+    use_json_format = False
 else:
-    client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY") or "dummy-key")
-    model_name = "gpt-4o-mini"
+    client = None
+    model_name = "mock"
+    use_json_format = False
 
 # ================= AUTH ENDPOINTS =================
 @app.post("/register", response_model=Token)
@@ -103,7 +132,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Email already registered")
     
     hashed_password = get_password_hash(user.password)
-    new_user = DBUser(email=user.email, hashed_password=hashed_password, total_coins=0)
+    new_user = DBUser(email=user.email, hashed_password=hashed_password, total_coins=0, first_name=user.first_name, last_name=user.last_name)
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
@@ -124,7 +153,14 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
 
 @app.get("/me", response_model=UserResponse)
 def get_me(current_user: DBUser = Depends(get_current_user)):
-    return {"email": current_user.email, "total_coins": current_user.total_coins}
+    return {"email": current_user.email, "total_coins": current_user.total_coins, "first_name": current_user.first_name or "", "last_name": current_user.last_name or ""}
+
+@app.post("/profile")
+def update_profile(user_update: UserUpdate, current_user: DBUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    current_user.first_name = user_update.first_name
+    current_user.last_name = user_update.last_name
+    db.commit()
+    return {"success": True}
 
 # ================= PROJECT ENDPOINTS =================
 @app.get("/projects", response_model=List[ProjectSummary])
@@ -182,6 +218,17 @@ def get_project_details(project_id: int, current_user: DBUser = Depends(get_curr
         total_minutes=total_minutes, completed_minutes=completed_minutes, roadmap=roadmap
     )
 
+@app.delete("/projects/{project_id}")
+def delete_project(project_id: int, current_user: DBUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    proj = db.query(DBProject).filter(DBProject.id == project_id, DBProject.owner_id == current_user.id).first()
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+        
+    db.delete(proj)
+    db.commit()
+    return {"success": True}
+
+
 
 @app.post("/generate-roadmap", response_model=RoadmapResponse)
 async def generate_roadmap(request: RoadmapRequest, current_user: DBUser = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -201,8 +248,7 @@ async def generate_roadmap(request: RoadmapRequest, current_user: DBUser = Depen
         f"Seviye: {request.level}"
     )
 
-    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY")
-    if not api_key:
+    if not client:
         result_json = {
             "roadmap": [
                 {
@@ -220,19 +266,42 @@ async def generate_roadmap(request: RoadmapRequest, current_user: DBUser = Depen
         }
     else:
         try:
-            response = await client.chat.completions.create(
-                model=model_name,
-                messages=[
+            params = {
+                "model": model_name,
+                "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
-                ],
-                response_format={"type": "json_object"}
-            )
+                ]
+            }
+            if use_json_format:
+                params["response_format"] = {"type": "json_object"}
+                
+            response = await client.chat.completions.create(**params)
             
             result_text = response.choices[0].message.content
+            if not use_json_format:
+                if result_text.startswith("```json"):
+                    result_text = result_text.strip()[7:-3].strip()
+                elif result_text.startswith("```"):
+                    result_text = result_text.strip()[3:-3].strip()
             result_json = json.loads(result_text)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+            print(f"API Error: {e}")
+            result_json = {
+                "roadmap": [
+                    {
+                        "phase_name": "Hazırlık (AI Hatası Nedeniyle Varsayılan)",
+                        "tasks": [
+                            {
+                                "title": "Başlangıç Adımı",
+                                "estimated_minutes": request.duration * request.daily_time,
+                                "actionable_step": "Hedefe ilk adımı at",
+                                "coin_reward": 50
+                            }
+                        ]
+                    }
+                ]
+            }
             
     # Save to Database
     db_proj = DBProject(
@@ -290,8 +359,7 @@ async def analyze_progress(request: ProgressRequest, current_user: DBUser = Depe
         f"Kullanıcı Metni: {request.user_text}"
     )
 
-    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY")
-    if not api_key:
+    if not client:
         # Mock Response
         result_json = {
             "status": "partial",
@@ -308,18 +376,40 @@ async def analyze_progress(request: ProgressRequest, current_user: DBUser = Depe
         }
     else:
         try:
-            response = await client.chat.completions.create(
-                model=model_name,
-                messages=[
+            params = {
+                "model": model_name,
+                "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
-                ],
-                response_format={"type": "json_object"}
-            )
+                ]
+            }
+            if use_json_format:
+                params["response_format"] = {"type": "json_object"}
+
+            response = await client.chat.completions.create(**params)
             result_text = response.choices[0].message.content
+            if not use_json_format:
+                if result_text.startswith("```json"):
+                    result_text = result_text.strip()[7:-3].strip()
+                elif result_text.startswith("```"):
+                    result_text = result_text.strip()[3:-3].strip()
             result_json = json.loads(result_text)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+            print(f"API Error in analyze: {e}")
+            result_json = {
+                "status": "partial",
+                "completion_percentage": 50,
+                "feedback": "Hata: AI servisi geçici olarak kullanım dışı. Varsayılan ilerleme eklendi.",
+                "next_action": "subtasks",
+                "subtasks": [
+                    {
+                        "title": "Kalan işlemi tamamla",
+                        "estimated_minutes": remaining_minutes,
+                        "actionable_step": "Kalan kısmı manuel olarak tamamla.",
+                        "coin_reward": int(remaining_coins * 0.5)
+                    }
+                ]
+            }
             
     # Process Results
     status_str = result_json.get("status", "completed")

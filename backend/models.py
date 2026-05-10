@@ -5,6 +5,8 @@ from typing import List, Optional
 class UserCreate(BaseModel):
     email: str
     password: str
+    first_name: Optional[str] = ""
+    last_name: Optional[str] = ""
 
 class UserLogin(BaseModel):
     email: str
@@ -17,6 +19,12 @@ class Token(BaseModel):
 class UserResponse(BaseModel):
     email: str
     total_coins: int
+    first_name: str = ""
+    last_name: str = ""
+
+class UserUpdate(BaseModel):
+    first_name: str
+    last_name: str
 
 # Roadmap Models
 class RoadmapRequest(BaseModel):

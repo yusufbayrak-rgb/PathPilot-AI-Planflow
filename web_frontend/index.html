@@ -9,11 +9,33 @@
 </head>
 <body>
 
+    <!-- Top Status Bar -->
+    <div id="top-status-bar" class="hidden">
+        <div class="status-item">
+            <span class="status-label">Kalan Süre</span>
+            <span id="top-countdown" class="status-value">--:--:--</span>
+        </div>
+        <div class="status-item">
+            <span class="status-label">Harcanan Efor</span>
+            <span id="top-effort" class="status-value">-- / --</span>
+        </div>
+        <div id="top-stages" class="stages-container">
+            <!-- Stages injected via JS -->
+        </div>
+    </div>
     <!-- Auth Modal Overlay -->
     <div id="auth-overlay" class="modal">
         <div class="modal-content auth-modal">
             <h2 id="auth-title">Giriş Yap</h2>
             <form id="auth-form">
+                <div class="form-group hidden" id="group-firstname">
+                    <label>İsim</label>
+                    <input type="text" id="auth-firstname">
+                </div>
+                <div class="form-group hidden" id="group-lastname">
+                    <label>Soyisim</label>
+                    <input type="text" id="auth-lastname">
+                </div>
                 <div class="form-group">
                     <label>E-posta</label>
                     <input type="email" id="auth-email" required>
@@ -40,7 +62,11 @@
         <div class="hamburger-icon">☰</div>
         <div class="sidebar">
             <div class="sidebar-header">
-                <button id="new-project-btn" class="primary-btn sm-btn">Yeni Projeye Başla</button>
+                <div class="sidebar-coin-display" style="margin-bottom: 15px; font-size: 1.1rem; font-weight: bold; color: var(--accent-color); background: rgba(245, 158, 11, 0.1); padding: 0.5rem; border-radius: 8px; text-align: center;">
+                    🪙 <span id="sidebar-coin-count">0</span> Focus Coins
+                </div>
+                <button id="profile-btn" class="primary-btn sm-btn" style="margin-bottom: 10px;">Profilim</button>
+                <button id="new-project-btn" class="primary-btn sm-btn" style="background: rgba(255,255,255,0.1); border: 1px solid var(--glass-border);">Yeni Projeye Başla</button>
             </div>
             <div class="sidebar-content">
                 <h3>Projelerim</h3>
@@ -65,6 +91,36 @@
 
         <!-- Main Content -->
         <main>
+            <!-- Profile Section -->
+            <section id="profile-section" class="card fade-in hidden">
+                <h2>Profilim</h2>
+                <div class="profile-edit-section" style="text-align: center; margin-bottom: 2rem; margin-top: 1rem;">
+                    <div class="profile-pic-container" style="display: flex; flex-direction: column; align-items: center; margin-bottom: 1.5rem;">
+                        <div id="profile-pic-preview" style="width: 100px; height: 100px; border-radius: 50%; background: var(--glass-bg); border: 2px solid var(--primary-color); display: flex; align-items: center; justify-content: center; font-size: 3rem; overflow: hidden;">
+                            👤
+                        </div>
+                        <input type="file" id="profile-pic-upload" accept="image/*" class="hidden">
+                        <button class="sm-btn" onclick="document.getElementById('profile-pic-upload').click()" style="margin-top: 10px; background: rgba(255,255,255,0.1); border: 1px solid var(--glass-border); color: white; cursor: pointer; border-radius: 8px; padding: 0.4rem 0.8rem;">Fotoğraf Yükle</button>
+                    </div>
+                    <div class="form-row" style="text-align: left;">
+                        <div class="form-group">
+                            <label>İsim</label>
+                            <input type="text" id="profile-firstname">
+                        </div>
+                        <div class="form-group">
+                            <label>Soyisim</label>
+                            <input type="text" id="profile-lastname">
+                        </div>
+                    </div>
+                    <button id="save-profile-btn" class="primary-btn sm-btn" style="width: auto; padding: 0.5rem 2rem; margin: 0 auto;">Kaydet</button>
+                </div>
+                
+                <h3 style="margin-top: 2rem; margin-bottom: 1rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 0.5rem;">Projelerim</h3>
+                <div id="profile-projects-list">
+                    <!-- Projects injected via JS -->
+                </div>
+            </section>
+
             <!-- Setup Target Section -->
             <section id="setup-section" class="card fade-in hidden">
                 <h1>Yeni Bir Projeye Başla</h1>
@@ -105,14 +161,6 @@
                 <div class="roadmap-header">
                     <h2>Yol Haritan</h2>
                     <h3 id="current-target-title" class="gradient-text"></h3>
-                    <div id="countdown-timer" class="hidden" style="position: fixed; right: 20px; top: 20px; z-index: 1050; background: var(--glass-bg); padding: 0.5rem 1rem; border-radius: 12px; border: 1px solid var(--glass-border); text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.3); backdrop-filter: blur(12px);">
-                        <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 5px;">Kalan Süre</div>
-                        <div id="countdown-display" style="display: flex; gap: 15px; justify-content: center;"></div>
-                    </div>
-                    <div id="effort-display" class="hidden" style="position: fixed; right: 20px; top: 110px; z-index: 1050; background: var(--glass-bg); padding: 0.5rem 1rem; border-radius: 12px; border: 1px solid var(--glass-border); text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.3); backdrop-filter: blur(12px);">
-                        <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 5px;">Tamamlanan Efor</div>
-                        <div id="effort-text" style="font-size: 1.1rem; font-weight: bold; color: #818cf8;">-- / --</div>
-                    </div>
                 </div>
                 <div id="roadmap-content">
                     <!-- Phases and tasks will be injected here -->
@@ -155,6 +203,7 @@
             </div>
         </div>
     </div>
+    
     <script src="app.js"></script>
 </body>
 </html>
