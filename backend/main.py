@@ -21,7 +21,7 @@ from models import (
 )
 from sqlalchemy import text
 
-load_dotenv()
+load_dotenv(override=True)
 
 # Create DB tables
 Base.metadata.create_all(bind=engine)
@@ -290,12 +290,12 @@ async def generate_roadmap(request: RoadmapRequest, current_user: DBUser = Depen
             result_json = {
                 "roadmap": [
                     {
-                        "phase_name": "Hazırlık (AI Hatası Nedeniyle Varsayılan)",
+                        "phase_name": f"AI Hatası: {str(e)[:50]}",
                         "tasks": [
                             {
-                                "title": "Başlangıç Adımı",
+                                "title": "Sistemi Kontrol Et",
                                 "estimated_minutes": request.duration * request.daily_time,
-                                "actionable_step": "Hedefe ilk adımı at",
+                                "actionable_step": "API anahtarını veya bağlantını gözden geçir.",
                                 "coin_reward": 50
                             }
                         ]
@@ -396,10 +396,12 @@ async def analyze_progress(request: ProgressRequest, current_user: DBUser = Depe
             result_json = json.loads(result_text)
         except Exception as e:
             print(f"API Error in analyze: {e}")
+            k = groq_key or ""
+            key_info = f"{k[:4]}...{k[-4:]} (L:{len(k)})"
             result_json = {
                 "status": "partial",
                 "completion_percentage": 50,
-                "feedback": "Hata: AI servisi geçici olarak kullanım dışı. Varsayılan ilerleme eklendi.",
+                "feedback": f"Hata: {str(e)[:60]} | Anahtar: {key_info}",
                 "next_action": "subtasks",
                 "subtasks": [
                     {
@@ -469,6 +471,19 @@ def complete_subtask(subtask_id: int, current_user: DBUser = Depends(get_current
     db_subtask.completed = True
     current_user.total_coins += db_subtask.coin_reward
     
-    # Also update main task percentage if all subtasks are done (optional logic, kept simple)
+    # Update main task percentage based on subtasks
+    parent_task = db_subtask.task
+    all_subtasks = parent_task.subtasks
+    completed_subtasks = [s for s in all_subtasks if s.completed]
+    
+    if all_subtasks:
+        new_percentage = int((len(completed_subtasks) / len(all_subtasks)) * 100)
+        # If it was partially completed by AI analysis before, we might want to blend, 
+        # but usually subtasks are added to cover the REMAINING part.
+        # However, to keep it simple and responsive:
+        parent_task.completion_percentage = new_percentage
+        if new_percentage == 100:
+            parent_task.completed = True
+
     db.commit()
     return {"success": True, "earned_coins": db_subtask.coin_reward}

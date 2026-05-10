@@ -6,6 +6,7 @@ let currentProjectCoins = 0;
 let currentTask = null;
 let currentTaskElementBtn = null;
 let activeProjectId = null;
+let expandedTasks = new Set(); // To keep track of which subtasks are toggled open
 
 // DOM
 const authOverlay = document.getElementById('auth-overlay');
@@ -75,9 +76,22 @@ function updateCoinCount(val) {
 
 let isLoginMode = true;
 
-// Init: Always show login screen
-authOverlay.classList.remove('hidden');
-hamburgerMenu.classList.add('hidden');
+// Init: Check if this is a refresh (sessionStorage survives refresh, but not browser close)
+const isSessionActive = sessionStorage.getItem('planflow_active_session');
+
+if (token && isSessionActive) {
+    authOverlay.classList.add('hidden');
+    hamburgerMenu.classList.remove('hidden');
+    // Load data in background
+    setTimeout(() => {
+        if (typeof loadUserAndProjects === 'function') {
+            loadUserAndProjects();
+        }
+    }, 100);
+} else {
+    authOverlay.classList.remove('hidden');
+    hamburgerMenu.classList.add('hidden');
+}
 
 // Pre-fill remembered credentials
 const savedEmail = localStorage.getItem('planflow_saved_email');
@@ -145,6 +159,9 @@ authForm.addEventListener('submit', async (e) => {
 
         token = data.access_token;
         localStorage.setItem('planflow_token', token);
+        // Mark session as active for this tab (survives refresh)
+        sessionStorage.setItem('planflow_active_session', 'true');
+        
         authOverlay.classList.add('hidden');
         hamburgerMenu.classList.remove('hidden');
         loadUserAndProjects();
@@ -211,13 +228,15 @@ async function loadUserAndProjects(skipShowProfile = false) {
     } catch (e) { console.error(e); }
 }
 
-async function loadProject(id) {
+async function loadProject(id, skipLoader = false) {
     activeProjectId = id;
     setupSection.classList.add('hidden');
     profileSection.classList.add('hidden');
     roadmapSection.classList.remove('hidden');
     topStatusBar.classList.remove('hidden');
-    roadmapContent.innerHTML = '<div class="loader" style="margin: 2rem auto; border-top-color: var(--primary-color)"></div>';
+    if (!skipLoader) {
+        roadmapContent.innerHTML = '<div class="loader" style="margin: 2rem auto; border-top-color: var(--primary-color)"></div>';
+    }
 
     try {
         const res = await authFetch(`${API_BASE_URL}/projects/${id}`);
@@ -312,14 +331,15 @@ function renderRoadmap(data) {
         let phaseCompletion = totalPhaseTasks > 0 ? Math.round((completedPhaseTasks / totalPhaseTasks) * 100) : 0;
         
         const dot = document.createElement('div');
-        dot.className = 'stage-dot';
+        dot.className = `stage-dot stage-dot-${index}`;
         dot.innerText = index + 1;
         if(phaseCompletion === 100) {
+            dot.classList.add('completed-dot');
             dot.style.background = 'var(--success-color)';
             dot.style.borderColor = 'var(--success-color)';
         }
         
-        dot.innerHTML += `<div class="stage-tooltip">${phase.phase_name} - %${phaseCompletion} Tamamlandı</div>`;
+        dot.innerHTML += `<div class="stage-tooltip">${phase.phase_name} - <span class="dot-percent">${phaseCompletion}</span>% Tamamlandı</div>`;
         topStages.appendChild(dot);
     });
 
@@ -336,7 +356,7 @@ function renderRoadmap(data) {
         let titleText = phase.phase_name + (isCompleted ? ' ✅' : '');
 
         phaseEl.innerHTML = `
-            <div class="phase-header" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--glass-border); padding-bottom: 0.5rem; margin-bottom: 1rem;">
+            <div class="phase-header phase-header-${phaseIndex}" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--glass-border); padding-bottom: 0.5rem; margin-bottom: 1rem;">
                 <h3 class="phase-title" style="border: none; margin: 0; padding: 0;">${titleText}</h3>
                 <span class="phase-toggle-icon" style="font-size: 0.8rem; color: var(--text-muted);">${phaseIndex === 0 ? '▲' : '▼'}</span>
             </div>
@@ -367,11 +387,18 @@ function renderRoadmap(data) {
                 : `<button class="task-action-btn" onclick="openProgressModal(${task.id}, '${task.title}', '${task.actionable_step}')">İlerlemeyi Gir</button>`;
 
             let subtasksHTML = '';
+            let toggleBtnHTML = '';
+            
             if (task.subtasks && task.subtasks.length > 0) {
-                subtasksHTML = `<div class="subtasks-list">`;
+                const isExpanded = expandedTasks.has(task.id);
+                toggleBtnHTML = `<button class="toggle-subtasks-btn" onclick="toggleSubtasks(${task.id}, this)" style="${isExpanded ? 'border-color: var(--primary-color)' : ''}">
+                    <span>Alt Görevler (${task.subtasks.length})</span> <span>${isExpanded ? '▲' : '▼'}</span>
+                </button>`;
+                
+                let listHTML = `<div class="subtasks-list">`;
                 task.subtasks.forEach(st => {
                     if(st.completed) currentProjectCoins += st.coin_reward;
-                    subtasksHTML += `
+                    listHTML += `
                         <div class="subtask-item">
                             <div class="subtask-info">
                                 <h5>${st.title}</h5>
@@ -387,7 +414,8 @@ function renderRoadmap(data) {
                         </div>
                     `;
                 });
-                subtasksHTML += `</div>`;
+                listHTML += `</div>`;
+                subtasksHTML = `<div class="subtasks-container ${isExpanded ? '' : 'hidden'}">${listHTML}</div>`;
             }
 
             taskEl.innerHTML = `
@@ -395,9 +423,10 @@ function renderRoadmap(data) {
                     <div class="task-info">
                         <h4>${task.title} <span class="task-completion">%${task.completion_percentage}</span></h4>
                         <p>${task.actionable_step}</p>
-                        <div style="margin-top: 0.5rem; display: flex; gap: 10px; align-items: center;">
+                        <div style="margin-top: 0.5rem; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                             <span style="font-size: 0.85rem; color: #818cf8; background: rgba(129, 140, 248, 0.1); padding: 0.2rem 0.6rem; border-radius: 12px;">⏱️ ${task.estimated_minutes} Dk Efor</span>
                             <div class="task-reward">🪙 ${task.coin_reward} Coin</div>
+                            ${toggleBtnHTML}
                         </div>
                     </div>
                     ${btnHTML}
@@ -418,9 +447,58 @@ async function completeSubtask(id, btnElement) {
         const data = await res.json();
         if(data.success) {
             btnElement.classList.add('completed');
-            btnElement.innerText = 'Bitti';
-            currentProjectCoins += data.earned_coins;
-            updateCoinCount(totalCoins + data.earned_coins);
+            btnElement.innerText = 'Bitti ✅';
+            
+            // Update total coins
+            totalCoins += data.earned_coins;
+            updateCoinCount(totalCoins);
+
+            // Instant UI Update for the parent task percentage
+            const taskItem = btnElement.closest('.task-item');
+            const allSubBtns = taskItem.querySelectorAll('.subtask-btn');
+            const completedSubBtns = taskItem.querySelectorAll('.subtask-btn.completed');
+            const newPercent = Math.round((completedSubBtns.length / allSubBtns.length) * 100);
+            
+            const percentEl = taskItem.querySelector('.task-completion');
+            if(percentEl) percentEl.innerText = `%${newPercent}`;
+            
+            // If 100%, mark main task as completed too
+            if(newPercent === 100) {
+                const mainBtn = taskItem.querySelector('.task-action-btn');
+                if(mainBtn && !mainBtn.classList.contains('completed')) {
+                    mainBtn.classList.add('completed');
+                    mainBtn.innerText = 'Tamamlandı ✅';
+                    mainBtn.onclick = null;
+                    
+                    // NEW: Update Phase Title and Top Dot instantly
+                    const phaseCard = taskItem.closest('.phase-card');
+                    if(phaseCard) {
+                        const allTasks = phaseCard.querySelectorAll('.task-item');
+                        const completedTasks = phaseCard.querySelectorAll('.task-action-btn.completed');
+                        const phasePercent = Math.round((completedTasks.length / allTasks.length) * 100);
+                        
+                        // Update Phase Title if 100%
+                        if(phasePercent === 100) {
+                            const phaseTitle = phaseCard.querySelector('.phase-title');
+                            if(phaseTitle && !phaseTitle.innerText.includes('✅')) {
+                                phaseTitle.innerText += ' ✅';
+                            }
+                        }
+                        
+                        // Update Top Dot
+                        const phaseIndex = Array.from(roadmapContent.children).indexOf(phaseCard);
+                        const dot = document.querySelector(`.stage-dot-${phaseIndex}`);
+                        if(dot) {
+                            const dotPercent = dot.querySelector('.dot-percent');
+                            if(dotPercent) dotPercent.innerText = phasePercent;
+                            if(phasePercent === 100) {
+                                dot.style.background = 'var(--success-color)';
+                                dot.style.borderColor = 'var(--success-color)';
+                            }
+                        }
+                    }
+                }
+            }
         }
     } catch (e) { console.error(e); }
 }
@@ -590,3 +668,20 @@ saveProfileBtn.addEventListener('click', async () => {
     }, 1500);
 });
 
+window.toggleSubtasks = function(taskId, btn) {
+    const taskItem = btn.closest('.task-item');
+    const container = taskItem.querySelector('.subtasks-container');
+    const isHidden = container.classList.contains('hidden');
+    
+    if (isHidden) {
+        container.classList.remove('hidden');
+        btn.querySelector('span:last-child').innerText = '▲';
+        btn.style.borderColor = 'var(--primary-color)';
+        expandedTasks.add(taskId);
+    } else {
+        container.classList.add('hidden');
+        btn.querySelector('span:last-child').innerText = '▼';
+        btn.style.borderColor = 'rgba(129, 140, 248, 0.2)';
+        expandedTasks.delete(taskId);
+    }
+};

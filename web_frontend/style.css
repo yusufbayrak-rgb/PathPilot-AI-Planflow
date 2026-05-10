@@ -467,3 +467,36 @@ input:focus, select:focus, textarea:focus {
     background: linear-gradient(to right, #818cf8, #c084fc);
     border-radius: 6px;
 }
+
+.hidden {
+    display: none !important;
+}
+
+.toggle-subtasks-btn {
+    background: rgba(129, 140, 248, 0.1);
+    color: #818cf8;
+    border: 1px solid rgba(129, 140, 248, 0.2);
+    padding: 6px 12px;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+}
+
+.toggle-subtasks-btn:hover {
+    background: rgba(129, 140, 248, 0.2);
+    border-color: #818cf8;
+}
+
+.subtasks-container {
+    margin-top: 15px;
+    padding-left: 15px;
+    border-left: 2px dashed rgba(129, 140, 248, 0.3);
+    overflow: hidden;
+    transition: max-height 0.3s ease-out;
+}
