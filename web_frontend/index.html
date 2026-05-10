@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepStep AI | Akıllı Planlama</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Auth Modal Overlay -->
+    <div id="auth-overlay" class="modal">
+        <div class="modal-content auth-modal">
+            <h2 id="auth-title">Giriş Yap</h2>
+            <form id="auth-form">
+                <div class="form-group">
+                    <label>E-posta</label>
+                    <input type="email" id="auth-email" required>
+                </div>
+                <div class="form-group">
+                    <label>Şifre</label>
+                    <input type="password" id="auth-password" required>
+                </div>
+                <div class="form-group checkbox-group" id="remember-me-container">
+                    <input type="checkbox" id="auth-remember">
+                    <label for="auth-remember" style="display:inline; margin-left: 5px;">Beni Hatırla</label>
+                </div>
+                <button type="submit" class="primary-btn" id="auth-submit-btn">
+                    <span class="btn-text">Giriş Yap</span>
+                    <div class="loader hidden"></div>
+                </button>
+            </form>
+            <p class="auth-switch">Hesabın yok mu? <a href="#" id="auth-switch-link">Kayıt Ol</a></p>
+        </div>
+    </div>
+
+    <!-- Hamburger Menu Sidebar -->
+    <div class="hamburger-container hidden" id="hamburger-menu">
+        <div class="hamburger-icon">☰</div>
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <button id="new-project-btn" class="primary-btn sm-btn">Yeni Projeye Başla</button>
+            </div>
+            <div class="sidebar-content">
+                <h3>Projelerim</h3>
+                <ul id="project-list">
+                    <!-- Project items injected via JS -->
+                </ul>
+            </div>
+            <div class="sidebar-footer" style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
+                <button id="logout-btn" class="logout-btn">Güvenli Çıkış</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="app-container">
+        <!-- Header -->
+        <header>
+            <div class="logo">🚀 DeepStep AI</div>
+            <div class="focus-coin-display">
+                🪙 <span id="coin-count">0</span> Focus Coins
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main>
+            <!-- Setup Target Section -->
+            <section id="setup-section" class="card fade-in hidden">
+                <h1>Yeni Bir Projeye Başla</h1>
+                <p class="subtitle">Büyük hedefini gir, yapay zeka senin için mikro görevlere bölsün.</p>
+                
+                <form id="roadmap-form">
+                    <div class="form-group">
+                        <label>Büyük Hedefiniz</label>
+                        <input type="text" id="target" placeholder="Örn: Kapsamlı bir portfolyo web sitesi yapmak" required>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Süre (Gün)</label>
+                            <input type="number" id="duration" placeholder="30" value="30" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Günlük Vakit (Dk)</label>
+                            <input type="number" id="daily_time" placeholder="60" value="60" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Zorluk Seviyesi</label>
+                        <select id="level">
+                            <option value="Başlangıç">Başlangıç</option>
+                            <option value="Orta" selected>Orta</option>
+                            <option value="İleri">İleri</option>
+                        </select>
+                    </div>
+                    <button type="submit" id="generate-btn" class="primary-btn">
+                        <span class="btn-text">Yol Haritası Oluştur</span>
+                        <div class="loader hidden"></div>
+                    </button>
+                </form>
+            </section>
+
+            <!-- Roadmap Section -->
+            <section id="roadmap-section" class="hidden fade-in">
+                <div class="roadmap-header">
+                    <h2>Yol Haritan</h2>
+                    <h3 id="current-target-title" class="gradient-text"></h3>
+                    <div id="countdown-timer" class="hidden" style="position: fixed; right: 20px; top: 20px; z-index: 1050; background: var(--glass-bg); padding: 0.5rem 1rem; border-radius: 12px; border: 1px solid var(--glass-border); text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.3); backdrop-filter: blur(12px);">
+                        <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 5px;">Kalan Süre</div>
+                        <div id="countdown-display" style="display: flex; gap: 15px; justify-content: center;"></div>
+                    </div>
+                    <div id="effort-display" class="hidden" style="position: fixed; right: 20px; top: 110px; z-index: 1050; background: var(--glass-bg); padding: 0.5rem 1rem; border-radius: 12px; border: 1px solid var(--glass-border); text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.3); backdrop-filter: blur(12px);">
+                        <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 5px;">Tamamlanan Efor</div>
+                        <div id="effort-text" style="font-size: 1.1rem; font-weight: bold; color: #818cf8;">-- / --</div>
+                    </div>
+                </div>
+                <div id="roadmap-content">
+                    <!-- Phases and tasks will be injected here -->
+                </div>
+            </section>
+        </main>
+
+        <!-- Progress Modal (Smart Logger) -->
+        <div id="progress-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Akıllı Günlük</h2>
+                    <button id="close-modal-btn" class="close-btn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p class="task-title-display" id="modal-task-title"></p>
+                    <p class="task-action-display" id="modal-task-action"></p>
+                    
+                    <div class="form-group">
+                        <label>Bugün neler yaptın? (NLP ile analiz edilecek)</label>
+                        <textarea id="user-progress-text" rows="4" placeholder="Örn: Navbar tasarımını bitirdim, renkleri ayarladım..."></textarea>
+                    </div>
+                    
+                    <button id="analyze-btn" class="primary-btn">
+                        <span class="btn-text">Analiz Et</span>
+                        <div class="loader hidden"></div>
+                    </button>
+
+                    <div id="analysis-result" class="hidden">
+                        <div class="result-card">
+                            <h4 id="res-status"></h4>
+                            <div class="progress-bar-container">
+                                <div id="res-progress-bar" class="progress-bar"></div>
+                            </div>
+                            <p id="res-completion">%0 Tamamlandı</p>
+                            <p id="res-feedback" class="feedback-text"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
